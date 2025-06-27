@@ -1,0 +1,54 @@
+name: Build SSL Installer
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'certs/**'
+      - 'scripts/**'
+      - 'pkg_payload/**'
+      - 'build.sh'
+      - 'background.png'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: macos-latest
+    name: Build PKG + DMG + Sign + Deploy
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up GPG
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Run build script
+        run: |
+          chmod +x ./build.sh
+          ./build.sh
+
+      - name: Generate SHA256
+        run: |
+          shasum -a 256 sslserver-installer.pkg > sslserver-installer.pkg.sha256
+
+      - name: GPG Sign
+        run: |
+          gpg --output sslserver-installer.pkg.sig --detach-sign sslserver-installer.pkg
+
+      - name: Commit artifacts
+        run: |
+          git config user.name "PlexiBot"
+          git config user.email "plexibot@neoncovenant.com"
+          git add sslserver-installer.*
+          git commit -m "🔄 Auto-rebuild: $(date)"
+          git push
+        continue-on-error: true
+
+      - name: Deploy GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./  # Assuming files are in root
